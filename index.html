@@ -177,6 +177,20 @@
   .imp-tip b{color:var(--text)}
   .imp-tip code{background:#eef1fb;padding:1px 6px;border-radius:5px;font-size:12px;word-break:break-all}
 
+  /* ---------- 从微信选择文档 ---------- */
+  .wxbanner{background:linear-gradient(135deg,#0cae43,#17b85a);color:#fff;border-radius:12px;padding:14px;margin-bottom:12px}
+  .wxbanner-head{font-weight:700;font-size:15px;margin-bottom:8px}
+  .wxbanner-steps{font-size:13px;line-height:1.7;margin-bottom:10px}
+  .wxbanner-steps b{color:#fff}
+  .wxbanner-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .wxbanner .btn-ghost{background:#fff;color:#0cae43;border:none}
+  .wxbanner .btn-ghost:hover{background:#f2f7f4}
+  .wx-qr{width:96px;height:96px;background:#fff;border-radius:8px;padding:4px;box-sizing:content-box}
+  .wxbanner-tip{font-size:12px;opacity:.92;margin-top:10px;line-height:1.6}
+  .wx-file{font-size:12px;margin-top:10px;color:#eafff0}
+  .wxbanner .import-msg.ok{color:#fff}
+  .wxbanner .import-msg.err{color:#ffe0e0}
+
   .hidden{display:none}
   .footer{text-align:center;color:var(--muted);font-size:12px;margin-top:6px}
 </style>
@@ -252,9 +266,17 @@
 
     <h2 style="margin-top:26px">📥 批量导入题目（一次加入很多题，免手打）</h2>
     <div class="import-box">
-      <div class="imp-step">① 方法一：导入本地文件（含从微信存下来另存的 .xlsx / .txt / .csv / .json）</div>
-      <input type="file" id="importFile" accept=".json,.csv,.txt,.xlsx,.xls" onchange="handleImportFile(this.files[0])">
-      <div id="importMsg" class="import-msg"></div>
+      <div class="wxbanner">
+        <div class="wxbanner-head">📱 ① 从微信选择文档（最省事）</div>
+        <div class="wxbanner-steps">用手机微信<b>扫码</b>打开本页 → 点下方「📎 选微信文档」→ 微信会自动弹出<b>文档选择框</b>，可选手聊天里的文件 / 微盘 / 手机文件。</div>
+        <div class="wxbanner-actions">
+          <button type="button" class="btn btn-ghost" onclick="$('importFile').click()">📎 选微信文档</button>
+          <img class="wx-qr" alt="微信扫码打开本站" src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&amp;data=https%3A%2F%2Fqu34260101.github.io%2F">
+        </div>
+        <div class="wxbanner-tip">电脑微信：点「选微信文档」会打开电脑文件夹，选 .xlsx / .txt / .csv / .json 即可，同一套流程。收到文件先「另存为」再选最稳。</div>
+        <input type="file" id="importFile" class="wx-file" accept=".json,.csv,.txt,.xlsx,.xls" onchange="handleImportFile(this.files[0])">
+        <div id="importMsg" class="import-msg"></div>
+      </div>
 
       <div class="imp-step">② 方法二：把内容从微信 / 网页 / 别处复制，粘贴到下面的框里</div>
       <textarea id="pasteBox" rows="6" placeholder="支持 CSV（每行一题）或 JSON，格式见下方示例"></textarea>
