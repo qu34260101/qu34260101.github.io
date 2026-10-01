@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>刷题助手</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#f4f6fb;
@@ -165,6 +166,17 @@
     border-radius:8px;cursor:pointer;font-size:12px;flex-shrink:0}
   .custom-item .c-del:hover{background:#fbd9d6}
 
+  /* ---------- 批量导入 ---------- */
+  .import-box{background:var(--bg);border:1px dashed var(--border);border-radius:12px;padding:14px}
+  .imp-step{font-size:13px;color:var(--text);margin-bottom:8px;font-weight:600}
+  .import-msg{margin-top:8px;font-size:13px;min-height:16px}
+  .import-msg.ok{color:var(--ok)}
+  .import-msg.err{color:var(--err)}
+  .imp-tip{margin-top:10px;font-size:12px;line-height:1.7;color:var(--muted);background:#fff;
+    border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+  .imp-tip b{color:var(--text)}
+  .imp-tip code{background:#eef1fb;padding:1px 6px;border-radius:5px;font-size:12px;word-break:break-all}
+
   .hidden{display:none}
   .footer{text-align:center;color:var(--muted);font-size:12px;margin-top:6px}
 </style>
@@ -236,6 +248,28 @@
       <input id="inpExplain" type="text" placeholder="可选，提交答案后展示">
 
       <button class="btn btn-primary" onclick="submitQuestion()" style="margin-top:16px">✓ 添加到题库</button>
+    </div>
+
+    <h2 style="margin-top:26px">📥 批量导入题目（一次加入很多题，免手打）</h2>
+    <div class="import-box">
+      <div class="imp-step">① 方法一：导入本地文件（含从微信存下来另存的 .xlsx / .txt / .csv / .json）</div>
+      <input type="file" id="importFile" accept=".json,.csv,.txt,.xlsx,.xls" onchange="handleImportFile(this.files[0])">
+      <div id="importMsg" class="import-msg"></div>
+
+      <div class="imp-step">② 方法二：把内容从微信 / 网页 / 别处复制，粘贴到下面的框里</div>
+      <textarea id="pasteBox" rows="6" placeholder="支持 CSV（每行一题）或 JSON，格式见下方示例"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-ghost btn-sm" onclick="importFromPaste()">📥 解析并导入</button>
+        <button class="btn btn-ghost btn-sm" onclick="fillSample()">填入示例</button>
+      </div>
+
+      <div class="imp-tip">
+        <b>CSV 每行一题，强烈建议首行保留表头，顺序为：</b>题型,题目,选项A,选项B,选项C,选项D,正确答案,解析<br>
+        <span>例（单选）：</span><code>,地球自转一周约多久,24小时,12小时,48小时,7天,B,自转一周约24小时</code><br>
+        <span>例（判断）：</span><code>判断,水在100°C标准大气压下会沸腾,正确,错误,,,正确,标准大气压100°C沸腾</code><br>
+        <b>JSON 示例：</b><code>[{"q":"题目","options":["A","B","C","D"],"answer":1,"explain":"解析"}]</code><br>
+        <span>题型可留空（恰好 2 个选项会自动判为判断题）；正确答案可写字母 A/B、数字 1/2/3 或直接写选项文字。</span>
+      </div>
     </div>
 
     <h2 style="margin-top:26px">📋 我添加的题目（<span id="customCount">0</span>）</h2>
@@ -681,6 +715,183 @@ function clearCustom(){
   renderCustomList();
   rebuildCount();
   renderStats();
+}
+
+// ---- 批量导入题目 ----
+const __MSG = $("#importMsg");
+function setImpMsg(el,text,ok){ el.textContent=text; el.className="import-msg "+(ok?"ok":"err"); }
+function normKey(k){ return String(k==null?"":k).replace(/\s+/g,"").toLowerCase(); }
+// 选项列名 → 下标(0..5)，-1 表示不是选项列
+function optCol(k){
+  k = String(k).replace(/\s+/g,"");
+  const m = /^(?:选项)?([a-dA-D1-4])$/.exec(k);
+  if(!m) return -1;
+  const c = m[1];
+  return /[a-dA-D]/.test(c) ? c.toUpperCase().charCodeAt(0)-65 : parseInt(c,10)-1;
+}
+// 解析 CSV（支持双引号包裹与转义）
+function parseCSVLines(text){
+  const lines = text.split(/\r?\n/).filter(l=>l.trim()!=="");
+  const rows=[];
+  for(const line of lines){
+    const out=[]; let cell="", inQ=false;
+    for(let i=0;i<line.length;i++){
+      const ch=line[i];
+      if(inQ){
+        if(ch==='"'){ if(line[i+1]==='"'){ cell+='"'; i++; } else inQ=false; }
+        else cell+=ch;
+      } else if(ch==='"' && cell===""){
+        inQ=true;
+      } else if(ch===','){
+        out.push(cell); cell="";
+      } else cell+=ch;
+    }
+    out.push(cell); rows.push(out);
+  }
+  return rows;
+}
+// 字母/文字 → 选项下标，找不到返回 -1
+function resolveLetterText(s, options){
+  s = String(s||"").trim();
+  if(/^[a-dA-D]$/.test(s)) return s.toUpperCase().charCodeAt(0)-65;
+  for(let i=0;i<options.length;i++){ if(options[i] && normKey(options[i])===normKey(s)) return i; }
+  return -1;
+}
+// CSV 答案列：数字按 1 基（1=第一项），也支持字母/文字
+function resolveCSVAnswer(raw, options){
+  const s=String(raw==null?"":raw).trim();
+  if(/^[1-6]$/.test(s)) return Math.min(parseInt(s,10)-1, options.length-1);
+  const i=resolveLetterText(s,options);
+  return i>=0?i:0;
+}
+// JSON 答案：数字按下标（0 基），字母/文字也可
+function resolveJSONAnswer(raw, options){
+  if(typeof raw==="number") return raw>=0?Math.min(Math.floor(raw),options.length-1):0;
+  const s=String(raw==null?"":raw).trim();
+  if(/^[1-6]$/.test(s)) return Math.min(parseInt(s,10)-1, options.length-1);
+  const i=resolveLetterText(s,options);
+  return i>=0?i:0;
+}
+// CSV 一行 → 题目（map 为空则按固定顺序：题型,题目,A,B,C,D,正确答案,解析）
+function qFromRow(row, map){
+  const get = i => (i>=0 && i<row.length) ? String(row[i]==null?"":row[i]).trim() : "";
+  const q = get(map?map.q:1);
+  if(!q) return null;
+  let options;
+  if(map) options=[0,1,2,3,4,5].map(n=>get(map.opt[n]));
+  else    options=[0,1,2,3,4,5].map(n=>get(n+2));
+  while(options.length>2 && options[options.length-1]==="") options.pop();
+  if(options.filter(Boolean).length<2) return null;
+  const rawType=normKey(get(map?map.type:0));
+  let type = /判断|judge|对错/.test(rawType) ? "judge"
+           : (options.filter(Boolean).length===2 && !/单选|choice/.test(rawType) ? "judge" : "choice");
+  if(type==="judge") options=options.slice(0,2);
+  const answer = resolveCSVAnswer(get(map?map.answer:7), options);
+  return { type, id:nextCID(), q, options, answer:Math.max(0,Math.min(answer,options.length-1)),
+           explain:get(map?map.explain:8) };
+}
+// CSV 全部行 → 题目数组（自动识别表头）
+function rowsToQuestions(rows, msg){
+  const list=[]; let start=0, map=null;
+  if(rows.length && rows[0].some(c=>/题目|题干|question/i.test(String(c).trim()))){
+    map={type:-1,q:-1,opt:[-1,-1,-1,-1,-1,-1],answer:-1,explain:-1};
+    rows[0].forEach((h,i)=>{
+      const k=normKey(h);
+      if(k==="题型"||k==="type"||k==="判断"||k==="judge"||k==="单选"||k==="choice") map.type=i;
+      else if(k==="题目"||k==="题干"||k==="question"||k==="题目内容"||k==="q") map.q=i;
+      else if(k==="解析"||k==="explain"||k==="explanation"||k==="答案解析") map.explain=i;
+      else if(k==="答案"||k==="正确答案"||k==="answer"||k==="ans") map.answer=i;
+      else { const oc=optCol(k); if(oc>=0 && oc<6) map.opt[oc]=i; }
+    });
+    if(map.q>=0) start=1; else { map=null; start=0; }
+  }
+  for(let r=start;r<rows.length;r++){ const o=qFromRow(rows[r],map); if(o) list.push(o); }
+  return list;
+}
+// JSON → 题目数组
+function jsonItemToQ(it){
+  if(!it||typeof it!=="object") return null;
+  const q = String(it.q||it.question||it["题目"]||it["题干"]||"").trim();
+  if(!q) return null;
+  let opts = it.options || it["选项"] || [];
+  if(typeof opts==="string") opts = opts.split(/[,，;；、]/).map(s=>s.trim()).filter(Boolean);
+  opts=(opts||[]).map(o=>String(o).trim());
+  while(opts.length>2 && !opts[opts.length-1]) opts.pop();
+  if(opts.filter(Boolean).length<2) return null;
+  const t=normKey(it.type||"");
+  let type = /判断|judge|对错/.test(t) ? "judge"
+           : (opts.filter(Boolean).length===2 && !/单选|choice/.test(t) ? "judge" : "choice");
+  if(type==="judge") opts=opts.slice(0,2);
+  return { type, id:nextCID(), q, options:opts,
+           answer:Math.max(0,Math.min(resolveJSONAnswer(it.answer!==undefined?it.answer:"",opts),opts.length-1)),
+           explain: String(it.explain||it["解析"]||"") };
+}
+function jsonToQuestions(text, msg){
+  let data;
+  try{ data=JSON.parse(text); }
+  catch(e){ setImpMsg(msg,"JSON 格式有误："+e.message,false); return []; }
+  if(Array.isArray(data)) return data.map(jsonItemToQ).filter(Boolean);
+  if(data && Array.isArray(data.questions)) return data.questions.map(jsonItemToQ).filter(Boolean);
+  if(data && typeof data==="object"){ const one=jsonItemToQ(data); return one?[one]:[]; }
+  return [];
+}
+// 合并进自定义题库，返回实际新增数
+function commitQuestions(list){
+  const existing=new Set(loadCustom().map(x=>normKey(x.q)));
+  const fresh=list.filter(q=>!existing.has(normKey(q.q)));
+  const cu=loadCustom(); cu.unshift(...fresh); saveCustom(cu);
+  renderCustomList(); rebuildCount(); renderStats();
+  return fresh.length;
+}
+// 文本内容分为 JSON 或 CSV 处理
+function importText(text, msg){
+  const t=String(text||"").trim();
+  if(!t){ setImpMsg(msg,"内容为空",false); return; }
+  let list;
+  if(t[0]==="["||t[0]==="{") list=jsonToQuestions(t,msg);
+  else list=rowsToQuestions(parseCSVLines(t),msg);
+  if(!list.length){ setImpMsg(msg,"没有解析出有效题目，请对照下方模板检查格式",false); return; }
+  const n=commitQuestions(list);
+  setImpMsg(msg,"✅ 共识别 "+list.length+" 题，成功新增 "+n+" 题（重复的已跳过）",true);
+}
+function handleImportFile(file){
+  const msg=$("importMsg");
+  if(!file){ return; }
+  const name=String(file.name||"").toLowerCase();
+  const ext=name.includes(".") ? name.split(".").pop() : "";
+  const rdr=new FileReader();
+  if(ext==="xlsx"||ext==="xls"){
+    if(typeof XLSX==="undefined"){ setImpMsg(msg,"导入 Excel 需要联网加载解析库：请在有网络的情况下打开本页再试。",false); return; }
+    rdr.readAsArrayBuffer(file);
+    rdr.onload=()=>{ try{
+        const wb=XLSX.read(rdr.result,{type:"array"});
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""});
+        const list=rowsToQuestions(rows,msg);
+        if(!list.length){ setImpMsg(msg,"Excel 里没有解析出有效题目（请确认有“题目”列/或按 题型,题目,A,B,C,D,答案,解析 排布）",false); return; }
+        const n=commitQuestions(list);
+        setImpMsg(msg,"✅ Excel 共识别 "+list.length+" 题，成功新增 "+n+" 题（重复的已跳过）",true);
+      }catch(e){ setImpMsg(msg,"Excel 解析失败："+e.message,false); } };
+    return;
+  }
+  rdr.readAsText(file,"utf-8");
+  rdr.onload=()=>{ try{ importText(rdr.result,msg); }catch(e){ setImpMsg(msg,"文件解析失败："+e.message,false); } };
+  rdr.onerror=()=>setImpMsg(msg,"读取文件失败",false);
+}
+function importFromPaste(){
+  const msg=$("importMsg");
+  const t=$("pasteBox").value.trim();
+  if(!t){ setImpMsg(msg,"粘贴框是空的，先把题目内容复制过来",false); return; }
+  importText(t,msg);
+  if(/^✅/.test(msg.textContent)) $("pasteBox").value="";
+}
+function fillSample(){
+  $("pasteBox").value = [
+    "题型,题目,选项A,选项B,选项C,选项D,正确答案,解析",
+    ",太阳系中最大的行星是？,地球,木星,金星,土星,B,木星是太阳系最大的行星",
+    "判断,企鹅会飞,正确,错误,,,错误,企鹅不会飞"
+  ].join("\n");
+  $("importMsg").textContent="";
+  $("importMsg").className="import-msg";
 }
 
 init();
