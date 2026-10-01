@@ -267,22 +267,15 @@
     <h2 style="margin-top:26px">📥 批量导入题目（一次加入很多题，免手打）</h2>
     <div class="import-box">
       <div class="wxbanner">
-        <div class="wxbanner-head">📱 ① 从微信选择文档（最省事）</div>
-        <div class="wxbanner-steps">用手机微信<b>扫码</b>打开本页 → 点下方「📎 选微信文档」→ 微信会自动弹出<b>文档选择框</b>，可选手聊天里的文件 / 微盘 / 手机文件。</div>
+        <div class="wxbanner-head" id="wxHead">📎 导入题库文档</div>
+        <div class="wxbanner-steps" id="wxSteps">正在识别访问环境…</div>
         <div class="wxbanner-actions">
-          <button type="button" class="btn btn-ghost" onclick="$('importFile').click()">📎 选微信文档</button>
+          <button type="button" class="btn btn-ghost" id="wxBtn" onclick="$('importFile').click()">📎 选择文档</button>
           <img class="wx-qr" alt="微信扫码打开本站" src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&amp;data=https%3A%2F%2Fqu34260101.github.io%2F">
         </div>
-        <div class="wxbanner-tip">电脑微信：点「选微信文档」会打开电脑文件夹，选 .xlsx / .txt / .csv / .json 即可，同一套流程。收到文件先「另存为」再选最稳。</div>
+        <div class="wxbanner-tip" id="wxTip">…</div>
         <input type="file" id="importFile" class="wx-file" accept=".json,.csv,.txt,.xlsx,.xls" onchange="handleImportFile(this.files[0])">
         <div id="importMsg" class="import-msg"></div>
-      </div>
-
-      <div class="imp-step">② 方法二：把内容从微信 / 网页 / 别处复制，粘贴到下面的框里</div>
-      <textarea id="pasteBox" rows="6" placeholder="支持 CSV（每行一题）或 JSON，格式见下方示例"></textarea>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-ghost btn-sm" onclick="importFromPaste()">📥 解析并导入</button>
-        <button class="btn btn-ghost btn-sm" onclick="fillSample()">填入示例</button>
       </div>
 
       <div class="imp-tip">
@@ -443,6 +436,7 @@ let isLocked = false;  // 当前题是否已判分
 function init(){
   rebuildCount();
   renderStats();
+  adaptWxUI();
 }
 function rebuildCount(){
   const sel = $("countSel");
@@ -899,21 +893,21 @@ function handleImportFile(file){
   rdr.onload=()=>{ try{ importText(rdr.result,msg); }catch(e){ setImpMsg(msg,"文件解析失败："+e.message,false); } };
   rdr.onerror=()=>setImpMsg(msg,"读取文件失败",false);
 }
-function importFromPaste(){
-  const msg=$("importMsg");
-  const t=$("pasteBox").value.trim();
-  if(!t){ setImpMsg(msg,"粘贴框是空的，先把题目内容复制过来",false); return; }
-  importText(t,msg);
-  if(/^✅/.test(msg.textContent)) $("pasteBox").value="";
-}
-function fillSample(){
-  $("pasteBox").value = [
-    "题型,题目,选项A,选项B,选项C,选项D,正确答案,解析",
-    ",太阳系中最大的行星是？,地球,木星,金星,土星,B,木星是太阳系最大的行星",
-    "判断,企鹅会飞,正确,错误,,,错误,企鹅不会飞"
-  ].join("\n");
-  $("importMsg").textContent="";
-  $("importMsg").className="import-msg";
+function adaptWxUI(){
+  const isWx = /MicroMessenger/i.test(navigator.userAgent);
+  const head=$("wxHead"), steps=$("wxSteps"), tip=$("wxTip"), btn=$("wxBtn");
+  if(!head) return;
+  if(isWx){
+    head.textContent="📎 选取微信聊天记录中的文档";
+    steps.innerHTML="点击下方「📎 选择文档」按钮，微信会弹出文档选择框，可选取<b>聊天记录里的文件 / 微盘 / 手机文件</b>后自动导入题库。";
+    btn.textContent="📎 选择微信聊天文档";
+    tip.textContent="本页已在微信中打开，选聊天记录文件最方便；也支持选手机本地文件。";
+  }else{
+    head.textContent="📎 在电脑上选取本地文档";
+    steps.innerHTML="点击下方「📎 选择文档」按钮，在电脑上选择本地题库文件（.xlsx / .txt / .csv / .json）即可批量导入。";
+    btn.textContent="📎 选择本地文档";
+    tip.textContent="想在手机上从微信聊天记录选文档？用手机微信扫右侧二维码打开本页即可。";
+  }
 }
 
 init();
